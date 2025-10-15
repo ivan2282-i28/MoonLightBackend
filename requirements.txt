@@ -1,2 +1,3 @@
 FastApi
 FastApi[standard]
+requests
