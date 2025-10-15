@@ -6,6 +6,11 @@ from urllib.parse import urljoin
 from starlette.routing import Match
 import requests
 from json import loads
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 ROOT = "https://raw.githubusercontent.com/ivan2282-i28/MoonLightRepo/refs/heads/main/"
 
@@ -47,11 +52,9 @@ def read_item(limit: int = 20, offset: int = 0):
         data = get_mods()
         all_mods = data.get("mods", [])
         
-        # Validate pagination range
         if offset < 0 or limit < 0:
             raise HTTPException(status_code=400, detail="Offset and limit must be non-negative")
         
-        # Get paginated slice
         paginated_mods = all_mods[offset:offset + limit]
         
         mods = []
@@ -78,26 +81,31 @@ def read_item(limit: int = 20, offset: int = 0):
         }
     
     except Exception as e:
+        logger.error(f"Error in /api/v2/mods: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/v2/mods/trending")
 def read_item():
-    data = get_mods()
-    trending_data = data["trending"]
-    mods = []
-    for i in trending_data:
-        mod = get_mod(i)
-        readmod = {
-            "self": f"/api/v1/mods/{i}",
-            "mod_id": i,
-            "mod_name": mod["title"],
-            "author": mod["author"],
-            "downloads": 10000000,
-            "thumbnail": f"/api/v1/mods/{i}/thumbnail",
-            "created_at": mod["created"]
-        }
-        mods.append(readmod)
-    return mods
+    try:
+        data = get_mods()
+        trending_data = data["trending"]
+        mods = []
+        for i in trending_data:
+            mod = get_mod(i)
+            readmod = {
+                "self": f"/api/v1/mods/{i}",
+                "mod_id": i,
+                "mod_name": mod["title"],
+                "author": mod["author"],
+                "downloads": 10000000,
+                "thumbnail": f"/api/v1/mods/{i}/thumbnail",
+                "created_at": mod["created"]
+            }
+            mods.append(readmod)
+        return mods
+    except Exception as e:
+        logger.error(f"Error in /api/v2/mods/trending: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 async def is_route_handled(request: Request) -> bool:
     """
@@ -123,22 +131,31 @@ async def forward_to_example_com(request: Request) -> Response:
     if request.url.query:
         target_url += f"?{request.url.query}"
     
+    logger.info(f"Forwarding request to: {target_url}")
+    
     # Prepare headers (remove some that shouldn't be forwarded)
     headers = dict(request.headers)
     headers_to_remove = ['host', 'content-length', 'content-encoding']
     for header in headers_to_remove:
         headers.pop(header, None)
     
-    async with httpx.AsyncClient() as client:
-        try:
+    # Add a user agent if not present
+    if 'user-agent' not in headers:
+        headers['user-agent'] = 'MoonLight-Proxy/1.0'
+    
+    try:
+        async with httpx.AsyncClient() as client:
             # Forward the request with same method, headers, and body
             response = await client.request(
                 method=request.method,
                 url=target_url,
                 headers=headers,
                 content=await request.body() if request.method in ["POST", "PUT", "PATCH"] else None,
-                timeout=30.0
+                timeout=30.0,
+                follow_redirects=True
             )
+            
+            logger.info(f"Received response from {target_url}: {response.status_code}")
             
             # Return the response from starlight.allofus.dev
             return Response(
@@ -146,15 +163,27 @@ async def forward_to_example_com(request: Request) -> Response:
                 status_code=response.status_code,
                 headers=dict(response.headers)
             )
-        except httpx.RequestError as e:
-            raise HTTPException(status_code=502, detail=f"Error forwarding request: {str(e)}")
+    except httpx.ConnectError as e:
+        logger.error(f"Connection error forwarding to {target_url}: {e}")
+        raise HTTPException(status_code=502, detail=f"Cannot connect to upstream server: {str(e)}")
+    except httpx.TimeoutException as e:
+        logger.error(f"Timeout forwarding to {target_url}: {e}")
+        raise HTTPException(status_code=504, detail=f"Upstream server timeout: {str(e)}")
+    except httpx.RequestError as e:
+        logger.error(f"Request error forwarding to {target_url}: {e}")
+        raise HTTPException(status_code=502, detail=f"Error forwarding request: {str(e)}")
+    except Exception as e:
+        logger.error(f"Unexpected error forwarding to {target_url}: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # Catch-all route for unhandled paths and methods - MUST BE LAST
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
 async def catch_all(request: Request, path: str):
+    logger.info(f"Catch-all route called: {request.method} {request.url.path}")
+    
     # Check if this specific route-method combination is handled by our app
     if await is_route_handled(request):
-        # Let FastAPI handle it normally - this should return 404 for unmatched routes
+        logger.info(f"Route {request.url.path} is handled locally but not found")
         raise HTTPException(status_code=404, detail="Route not found")
     
     # Forward request to starlight.allofus.dev
