@@ -1,2 +1,2 @@
 FastApi
-FastApi[standart]
+FastApi[standard]
