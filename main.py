@@ -156,21 +156,25 @@ async def forward_to_example_com(request: Request) -> Response:
             )
             
             logger.info(f"Received response from {target_url}: {response.status_code}")
-            logger.info(f"Response headers: {dict(response.headers)}")
             
-            # Create a clean headers dict for the response
-            response_headers = {}
-            for key, value in response.headers.items():
-                # Skip some headers that should be handled by FastAPI
-                if key.lower() not in ['content-encoding', 'transfer-encoding', 'content-length']:
-                    response_headers[key] = value
+            # Filter out problematic headers that should not be forwarded
+            response_headers = dict(response.headers)
             
-            # Return the response from starlight.allofus.dev with proper content
+            # Remove conflicting headers that cause the "Content-Length" and "Transfer-Encoding" issue
+            headers_to_remove_from_response = [
+                'transfer-encoding', 
+                # 'content-encoding',
+                'content-length'
+            ]
+            
+            for header in headers_to_remove_from_response:
+                response_headers.pop(header, None)
+            
+            # Return the response from starlight.allofus.dev
             return Response(
                 content=response.content,
                 status_code=response.status_code,
-                headers=response_headers,
-                media_type=response.headers.get('content-type')  # Preserve content-type
+                headers=response_headers
             )
     except httpx.ConnectError as e:
         logger.error(f"Connection error forwarding to {target_url}: {e}")
