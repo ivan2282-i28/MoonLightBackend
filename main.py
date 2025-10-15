@@ -157,11 +157,24 @@ async def forward_to_example_com(request: Request) -> Response:
             
             logger.info(f"Received response from {target_url}: {response.status_code}")
             
+            # Filter out problematic headers that should not be forwarded
+            response_headers = dict(response.headers)
+            
+            # Remove conflicting headers that cause the "Content-Length" and "Transfer-Encoding" issue
+            headers_to_remove_from_response = [
+                'transfer-encoding', 
+                'content-encoding',
+                'content-length'
+            ]
+            
+            for header in headers_to_remove_from_response:
+                response_headers.pop(header, None)
+            
             # Return the response from starlight.allofus.dev
             return Response(
                 content=response.content,
                 status_code=response.status_code,
-                headers=dict(response.headers)
+                headers=response_headers
             )
     except httpx.ConnectError as e:
         logger.error(f"Connection error forwarding to {target_url}: {e}")
