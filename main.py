@@ -7,6 +7,8 @@ import logging
 from fastapi.responses import StreamingResponse
 import requests
 import io
+import time
+from functools import wraps
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -41,6 +43,30 @@ def get_mod(id: str):
 def get_mod_version(id: int, version: str):
     data = requests.get(ROOT + f"mods/{id}/version/{version}/mod.dll")
     return data.content
+
+def retry_handler(max_retries=10):
+    """Decorator to retry handler execution on failure"""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    logger.warning(f"Handler {func.__name__} failed with exception: {e}. Attempt {attempt + 1}/{max_retries}")
+                    
+                    # Exponential backoff
+                    if attempt < max_retries - 1:
+                        time.sleep(2 ** attempt)  # 1, 2, 4, 8... seconds
+            
+            # If we've exhausted all retries, raise the last exception
+            logger.error(f"Handler {func.__name__} failed after {max_retries} attempts: {last_exception}")
+            raise last_exception
+        return wrapper
+    return decorator
 
 @app.get("/")
 def read_root():
@@ -107,27 +133,31 @@ def read_item():
         logger.error(f"Error in /api/v2/mods/trending: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
+@retry_handler(max_retries=10)
 @app.get("/api/v1/mods/trending")
 def read_item():
     result = requests.request("GET","https://starlight.allofus.dev/api/v1/mods/trending")
     return result.json()
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/mods")
 def read_item(limit: int = 20, offset: int = 0):
     result = requests.request("GET","https://starlight.allofus.dev/api/v1/mods/",params={"limit":limit,"offset":offset})
     return result.json()
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/mods/total")
 def read_item():
     result = requests.request("GET","https://starlight.allofus.dev/api/v1/mods/total")
     return result.json()
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/mods/{id}")
 def read_item(id: str):
     result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}")
     return result.json()
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/mods/{id}/thumbnail")
 def read_item(id: str):
     result = requests.get(f"https://starlight.allofus.dev/api/v1/mods/{id}/thumbnail", stream=True)
@@ -144,21 +174,25 @@ def read_item(id: str):
         }
     )
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/mods/{id}/versions")
 def read_item(id: str):
     result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/versions")
     return result.json()
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/mods/{id}/versions/{id2}")
 def read_item(id: str, id2 : str):
     result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/versions/{id2}")
     return result.json()
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/mods/{id}/versions/{id2}/dependencies")
 def read_item(id: str, id2 : str):
     result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/versions/{id2}/dependencies")
     return result.json()
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/mods/{id}/versions/{id2}/file")
 def read_item(id: str, id2: str):
     result = requests.get(f"https://starlight.allofus.dev/api/v1/mods/{id}/versions/{id2}/file", stream=True)
@@ -172,26 +206,31 @@ def read_item(id: str, id2: str):
         }
     )
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/mods/{id}/links")
 def read_item(id: str):
     result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/links")
     return result.json()
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/mods/{id}/links/{id2}")
 def read_item(id: str, id2 : int):
     result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/links/{id2}")
     return result.json()
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/mods/{id}/tags")
 def read_item(id: str):
     result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/tags")
     return result.json()
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/news")
 def read_item(limit: int = 20, offset: int = 0):
     result = requests.request("GET","https://starlight.allofus.dev/api/v1/news/",params={"limit":limit,"offset":offset})
     return result.json()
 
+@retry_handler(max_retries=10)
 @app.get("/api/v1/news/{id}")
 def read_item(id:int):
     result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/news/{id}")
