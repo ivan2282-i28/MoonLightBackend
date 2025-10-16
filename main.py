@@ -130,8 +130,19 @@ def read_item(id: str):
 
 @app.get("/api/v1/mods/{id}/thumbnail")
 def read_item(id: str):
-    result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/thumbnail")
-    return result.json()
+    result = requests.get(f"https://starlight.allofus.dev/api/v1/mods/{id}/thumbnail", stream=True)
+    
+    # Get the actual content type from the response
+    content_type = result.headers.get('content-type', 'image/png')
+    
+    # For thumbnails, use 'inline' instead of 'attachment' to display in browser
+    return StreamingResponse(
+        io.BytesIO(result.content),
+        media_type=content_type,
+        headers={
+            'Content-Disposition': f'inline; filename="{id}_thumbnail"'
+        }
+    )
 
 @app.get("/api/v1/mods/{id}/versions")
 def read_item(id: str):
