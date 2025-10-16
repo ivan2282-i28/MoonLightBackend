@@ -1,12 +1,12 @@
 from typing import Union
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import Response
-import httpx
-from urllib.parse import urljoin
-from starlette.routing import Match
 import requests
 from json import loads
 import logging
+from fastapi.responses import StreamingResponse
+import requests
+import io
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -107,98 +107,81 @@ def read_item():
         logger.error(f"Error in /api/v2/mods/trending: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-async def is_route_handled(request: Request) -> bool:
-    """
-    Check if the current route and method are handled by our application
-    """
-    for route in app.routes:
-        # Skip the catch-all route itself
-        if hasattr(route, 'path') and route.path == '/{path:path}':
-            continue
-            
-        if hasattr(route, 'methods') and request.method in route.methods:
-            match, _ = route.matches(request.scope)
-            if match == Match.FULL:
-                return True
-    return False
 
-async def forward_to_example_com(request: Request) -> Response:
-    """
-    Forward the request to starlight.allofus.dev and return the response
-    """
-    target_url = urljoin("https://starlight.allofus.dev", str(request.url.path))
-    
-    if request.url.query:
-        target_url += f"?{request.url.query}"
-    
-    logger.info(f"Forwarding request to: {target_url}")
-    
-    # Prepare headers (remove some that shouldn't be forwarded)
-    headers = dict(request.headers)
-    headers_to_remove = ['host', 'content-length', 'content-encoding']
-    for header in headers_to_remove:
-        headers.pop(header, None)
-    
-    # Add a user agent if not present
-    if 'user-agent' not in headers:
-        headers['user-agent'] = 'MoonLight-Proxy/1.0'
-    
-    try:
-        async with httpx.AsyncClient() as client:
-            # Forward the request with same method, headers, and body
-            response = await client.request(
-                method=request.method,
-                url=target_url,
-                headers=headers,
-                content=await request.body() if request.method in ["POST", "PUT", "PATCH"] else None,
-                timeout=30.0,
-                follow_redirects=True
-            )
-            
-            logger.info(f"Received response from {target_url}: {response.status_code}")
-            
-            # Filter out problematic headers that should not be forwarded
-            response_headers = dict(response.headers)
-            
-            # Remove conflicting headers that cause the "Content-Length" and "Transfer-Encoding" issue
-            headers_to_remove_from_response = [
-                'transfer-encoding', 
-                # 'content-encoding',
-                'content-length'
-            ]
-            
-            for header in headers_to_remove_from_response:
-                response_headers.pop(header, None)
-            
-            # Return the response from starlight.allofus.dev
-            return Response(
-                content=response.content,
-                status_code=response.status_code,
-                headers=response_headers
-            )
-    except httpx.ConnectError as e:
-        logger.error(f"Connection error forwarding to {target_url}: {e}")
-        raise HTTPException(status_code=502, detail=f"Cannot connect to upstream server: {str(e)}")
-    except httpx.TimeoutException as e:
-        logger.error(f"Timeout forwarding to {target_url}: {e}")
-        raise HTTPException(status_code=504, detail=f"Upstream server timeout: {str(e)}")
-    except httpx.RequestError as e:
-        logger.error(f"Request error forwarding to {target_url}: {e}")
-        raise HTTPException(status_code=502, detail=f"Error forwarding request: {str(e)}")
-    except Exception as e:
-        logger.error(f"Unexpected error forwarding to {target_url}: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+@app.get("/api/v1/mods/trending")
+def read_item():
+    result = requests.request("GET","https://starlight.allofus.dev/api/v1/mods/trending")
+    return result.json()
 
-# Catch-all route for unhandled paths and methods - MUST BE LAST
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
-async def catch_all(request: Request, path: str):
-    logger.info(f"Catch-all route called: {request.method} {request.url.path}")
-    
-    # Check if this specific route-method combination is handled by our app
-    if await is_route_handled(request):
-        logger.info(f"Route {request.url.path} is handled locally but not found")
-        raise HTTPException(status_code=404, detail="Route not found")
-    
-    # Forward request to starlight.allofus.dev
-    return await forward_to_example_com(request)
+@app.get("/api/v1/mods")
+def read_item(limit: int = 20, offset: int = 0):
+    result = requests.request("GET","https://starlight.allofus.dev/api/v1/mods/",params={"limit":limit,"offset":offset})
+    return result.json()
 
+@app.get("/api/v1/mods/total")
+def read_item():
+    result = requests.request("GET","https://starlight.allofus.dev/api/v1/mods/total")
+    return result.json()
+
+@app.get("/api/v1/mods/{id}")
+def read_item(id: str):
+    result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}")
+    return result.json()
+
+@app.get("/api/v1/mods/{id}/thumbnail")
+def read_item(id: str):
+    result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/thumbnail")
+    return result.json()
+
+@app.get("/api/v1/mods/{id}/versions")
+def read_item(id: str):
+    result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/versions")
+    return result.json()
+
+@app.get("/api/v1/mods/{id}/versions/{id2}")
+def read_item(id: str, id2 : str):
+    result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/versions/{id2}")
+    return result.json()
+
+@app.get("/api/v1/mods/{id}/versions/{id2}/dependencies")
+def read_item(id: str, id2 : str):
+    result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/versions/{id2}/dependencies")
+    return result.json()
+
+@app.get("/api/v1/mods/{id}/versions/{id2}/file")
+def read_item(id: str, id2: str):
+    result = requests.get(f"https://starlight.allofus.dev/api/v1/mods/{id}/versions/{id2}/file", stream=True)
+    
+    # Return as streaming response
+    return StreamingResponse(
+        io.BytesIO(result.content),
+        media_type=result.headers.get('content-type', 'application/octet-stream'),
+        headers={
+            'Content-Disposition': f'attachment; filename="{id2}"'
+        }
+    )
+
+@app.get("/api/v1/mods/{id}/links")
+def read_item(id: str):
+    result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/links")
+    return result.json()
+
+@app.get("/api/v1/mods/{id}/links/{id2}")
+def read_item(id: str, id2 : int):
+    result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/links/{id2}")
+    return result.json()
+
+@app.get("/api/v1/mods/{id}/tags")
+def read_item(id: str):
+    result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/mods/{id}/tags")
+    return result.json()
+
+@app.get("/api/v1/news")
+def read_item(limit: int = 20, offset: int = 0):
+    result = requests.request("GET","https://starlight.allofus.dev/api/v1/news/",params={"limit":limit,"offset":offset})
+    return result.json()
+
+@app.get("/api/v1/news/{id}")
+def read_item(id:int):
+    result = requests.request("GET",f"https://starlight.allofus.dev/api/v1/news/{id}")
+    return result.json()
