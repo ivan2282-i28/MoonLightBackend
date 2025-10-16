@@ -157,7 +157,7 @@ def read_item(id: str, id2: str):
         io.BytesIO(result.content),
         media_type=result.headers.get('content-type', 'application/octet-stream'),
         headers={
-            'Content-Disposition': f'attachment; filename="{id2}"'
+            'Content-Disposition': f'attachment; filename="{id}.dll"'
         }
     )
 
